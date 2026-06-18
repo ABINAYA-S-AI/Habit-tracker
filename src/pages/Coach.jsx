@@ -100,6 +100,47 @@ function Coach({ user }) {
     }
   };
 
+  // Groq API Request (Llama 3.3 70B)
+  const askGroq = async (promptText, habitsList, stats) => {
+    if (!apiKey) return null;
+
+    const systemInstruction = `You are a helpful, encouraging, and witty Habit AI Coach. The user's name is ${
+      user?.displayName || "Builder"
+    }. Their current habits list: ${JSON.stringify(
+      habitsList
+    )}. Today's progress: ${stats.completedToday} out of ${
+      stats.totalHabits
+    } habits completed. Answer their questions about habits, routines, productivity, lazy feelings, or general queries in a friendly, engaging style, occasionally mixing in common Tamil/Tanglish words (like 'mass', 'buddy', 'super', 'panna mudiyum') to make it fun and relatable. Keep the responses concise (under 4-5 sentences if possible), positive, and action-oriented.`;
+
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: systemInstruction },
+            { role: "user", content: promptText }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || "Groq API request failed");
+      }
+
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || "No response generated.";
+    } catch (error) {
+      console.error("Groq API Error:", error);
+      throw error;
+    }
+  };
+
   // Local rule-based fallback responses
   const generateResponse = (input) => {
     const text = input.toLowerCase();
@@ -182,10 +223,14 @@ Tip: Daily reminders active-a vachukonga so notifications click panni complete p
 
       let coachText = "";
       if (apiKey) {
-        coachText = await askGemini(textToSend, habitsList, stats);
+        if (apiKey.startsWith("gsk_")) {
+          coachText = await askGroq(textToSend, habitsList, stats);
+        } else {
+          coachText = await askGemini(textToSend, habitsList, stats);
+        }
       }
       
-      // Fallback if no API key or askGemini fails to produce text
+      // Fallback if no API key or API fails to produce text
       if (!coachText) {
         coachText = generateResponse(textToSend);
       }
@@ -198,7 +243,7 @@ Tip: Daily reminders active-a vachukonga so notifications click panni complete p
         ...prev,
         { 
           sender: "coach", 
-          text: `⚠️ (AI Error: ${error.message || "Failed to contact Gemini"}). Here is my offline recommendation:\n\n${fallbackText}` 
+          text: `⚠️ (AI Error: ${error.message || "Failed to contact AI service"}). Here is my offline recommendation:\n\n${fallbackText}` 
         }
       ]);
     } finally {
@@ -247,16 +292,16 @@ Tip: Daily reminders active-a vachukonga so notifications click panni complete p
       {/* API Key Panel */}
       {showSettings && (
         <div className="glass-panel" style={{ padding: "15px", marginBottom: "15px", borderRadius: "12px", background: "rgba(15, 23, 42, 0.8)", border: "1px solid var(--border-color)" }}>
-          <h3 style={{ color: "#a78bfa", fontSize: "0.95rem", marginBottom: "8px" }}>⚙️ Configure Google Gemini AI</h3>
+          <h3 style={{ color: "#a78bfa", fontSize: "0.95rem", marginBottom: "8px" }}>⚙️ Configure Google Gemini / Groq AI</h3>
           <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "12px", lineHeight: "1.4" }}>
-            Get smart, personalized dynamic answers! Get a free key from <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" style={{ color: "#a78bfa", textDecoration: "underline" }}>Google AI Studio</a> and paste it below.
+            Get smart, personalized dynamic answers! Paste your <strong>Google Gemini API Key</strong> (from <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" style={{ color: "#a78bfa", textDecoration: "underline" }}>Google AI Studio</a>) or <strong>Groq API Key</strong> (starts with <code>gsk_</code> from <a href="https://console.groq.com/" target="_blank" rel="noreferrer" style={{ color: "#a78bfa", textDecoration: "underline" }}>Groq Console</a>) below.
           </p>
           <div style={{ display: "flex", gap: "10px" }}>
             <input 
               type="password"
               className="input-element"
               style={{ flex: 1, padding: "8px 12px", fontSize: "0.85rem" }}
-              placeholder="Paste your Gemini API Key..."
+              placeholder="Paste your Gemini or Groq API Key..."
               value={tempKey}
               onChange={(e) => setTempKey(e.target.value)}
             />
